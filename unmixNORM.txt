@@ -1,0 +1,167 @@
+ 
+  library(minpack.lm)
+  
+  unmixNORM <- function(x, y, ntry=200, msd=0.1) {
+
+       RD <- function(yd, nd, v0) {
+
+            if (yd[1]>v0 && yd[nd]>v0) {
+
+                reserveidx <- seq(nd)
+
+            } else {
+
+                negzero11 <- which(diff(as.numeric(yd<=v0))<0)  
+                negzero22 <- if (length(negzero11)>0)  {1:negzero11[1]}  else  {nd*1000}
+
+                ###
+                negzero33 <- which(diff(as.numeric(rev(yd)<=v0))<0)
+                negzero44 <-  if (length(negzero33)>0)  {seq(from=nd, to=1, by=-1)[negzero33[1]]:nd}  else  {nd*1000+1}
+
+                ###
+                if (yd[1]>v0)  {
+
+                    reserveidx <- (1:nd)[-negzero44]
+
+                } else if (yd[nd]>v0) {
+
+                    reserveidx <- (1:nd)[-negzero22]
+
+               } else {
+
+                    reserveidx <- (1:nd)[-c(negzero22,negzero44)]
+
+               } # end if.
+
+           } # end if.
+
+           return(reserveidx)
+
+      } # end function RD.
+           
+      minfn <- function(p, xd, yd)  {
+  
+          p <- abs(p)  
+          ncomp <- nrow(p)
+        
+          nd <- length(xd)
+
+          hg <- rep(.Machine$double.xmax, nd)
+          if (any(!is.finite(p)))  return(hg)
+             
+          matProb <- matrix(nrow=nd, ncol=ncomp)
+ 
+          for (j in 1:ncomp) {
+
+              prp <- p[j,1]
+
+              mu <- p[j,2]
+           
+              sigma <- p[j,3]
+              if (sigma>msd) sigma <- msd
+
+              matProb[,j] <- prp/sqrt(2*pi)/sigma*exp(-0.5*(xd-mu)^2/sigma^2)
+
+           } # end for.
+
+           yd_fit <- rowSums(matProb)
+
+           if (any(!is.finite(yd_fit)))  return(hg)
+
+           yd-yd_fit
+             
+       } # end function minfn.
+       ###
+
+       minfn2 <- function(p, xd, yd)  {
+
+           p <- abs(p)
+           ncomp <- nrow(p)
+             
+           nd <- length(xd)
+           
+           matProb <- matrix(nrow=nd, ncol=ncomp)
+ 
+           for (j in 1:ncomp) {
+
+               prp <- p[j,1]
+               mu <- p[j,2]
+           
+               sigma <- p[j,3]
+               if (sigma>msd) sigma <- msd
+
+               matProb[,j] <- prp/sqrt(2*pi)/sigma*exp(-0.5*(xd-mu)^2/sigma^2)
+
+           } # end for.
+
+           cbind(matProb, rowSums(matProb))
+             
+       } # end function minfn2.
+       ###
+      
+       ###
+       reserveidx <- RD(y, length(y), v0=0.01)
+       x <- x[reserveidx]
+       y <- y[reserveidx]
+       
+       ###
+       plot(x, y, type="o", col="red", lwd=2, pch=21, bg="red")
+      
+       ###
+       ncomp <- as.numeric(readline(paste("Please enter the number of components (i.e., [ncomp]): ")))
+       if (!is.finite(ncomp))  stop("[ncomp] has not been provided!")
+       mu <- mdgs <- locator(ncomp)$x
+       
+       ###
+       prp <- rep(1/ncomp, ncomp)
+       sigma <- rep(0.05, ncomp)
+       
+       minv <- 1e30
+       for (i in 1:ntry)  {
+
+           ###p1 <- matrix(rnorm(n=length(p0), mean=p0, sd=0.1*abs(p0)),nrow=ncomp)
+           p1 <- cbind(prp, rnorm(n=ncomp, mean=mu, sd=abs(mu)*0.1), sigma)
+      
+           D <- try(minpack.lm::nls.lm(par=p1, lower=NULL, upper=NULL, fn=minfn, jac=NULL, 
+                    control=nls.lm.control(maxiter=1024), x, y), silent=TRUE)
+
+           if (class(D)!="try-error" && D$deviance<minv)  {
+
+               minv <- D$deviance
+               par <- abs(D$par)
+
+           } # end if.
+
+       } # end for.
+
+       ###
+       par <- par[order(par[,2]),]
+       FT <- minfn2(par, x, y)
+
+       ###
+       colvec <- c("red", "blue", "purple", "plum4", "green", "brown", "yellow2", "deeppink",  "wheat", "turquoise", "magenta1")  
+       plot(x, y, type="o", col="red", xaxt="n", yaxt="n", lwd=2, pch=21, bg="red")
+       for (i in 1:ncomp) points(x, FT[,i], type="l", lwd=3, col=colvec[i])
+       points(x, FT[,ncomp+1], type="l", lwd=3, col="grey60")
+
+       par[,1] <- par[,1]/sum(par[,1])
+       idx <- par[,3]>msd
+       par[idx,3] <- msd
+       colnames(par) <- c("prp","mean","sd")
+       rownames(par) <- paste("comp",1:ncomp,sep="")
+
+       output <- cbind(x,FT)
+       colnames(output) <- c("x",paste("comp",1:ncomp,sep=""),"y")   
+       write.csv(output, file="KKK.csv")
+       
+       list("par"=par, "kpmax"=ncomp/max(par[,1]))
+
+    } # end function unmixNORM.   
+    ###
+
+
+    ##x <-   density(ageMAT[2,])$x
+    ##y <-   density(ageMAT[2,])$y 
+    ##X <- unmixNORM(x, y) 
+    ##print(X)
+      

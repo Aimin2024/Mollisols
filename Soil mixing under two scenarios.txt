@@ -1,0 +1,362 @@
+
+
+     
+  ###
+  ### Scenario 1, mixing without accretion.
+  ###=======================================
+  rm(list=ls())
+
+  ### Merge age groups.
+  merge <- function(x, y) {
+
+      sce <- factor(x)
+      Y <- split(y, sce) 
+      n <- length(Y)
+
+      v <- vector(length=n)
+      for (i in 1:n) if (length(Y[[i]])==0)  v[i] <- 0  else v[i] <- sum(Y[[i]])
+
+      list("u"=as.numeric(levels(sce)), "v"=v)
+
+  } # end function merge
+
+  ### accumulatio rate, m/ka
+  ar <- 0.065  
+    
+  # Section depth 2 m, 0.05 m per layer.           
+  d <- seq(0,2,by=0.05)     
+  nd <- length(d)
+
+  ### A matrix describing the probability of
+  ### reciving grains from upper layers. 
+  mat <- matrix(0,nrow=nd,ncol=nd)
+  for (i in 1:nd) {
+   
+      mat[i,i] <- 0.5+0.02*i
+      if (mat[i,i]>=1)  mat[i,i] <- 1
+
+      if (i==1) mat[i,i] <- 1
+      if (i==2) mat[1,2] <- 1-mat[i,i]
+
+      if (mat[i,i]>1) mat[i,i] <- 1
+      
+      if (i>=3) { 
+
+          v <- (0.5-0.01*i)^(1:(i-1))
+          if (i==50) v <- rep(1,i-1)
+
+          mat[1:(i-1),i] <- rev((1-mat[i,i])*v/sum(v))
+
+      } # end if.
+      
+
+  } # end for.
+  
+  round(mat,3)
+      
+  ### time of a mixing cycle, ka. 
+  Astep <- 0.03   
+
+  ### Total time, T ka.
+  T <- 30         
+  N <- T/Astep  
+  
+  ###
+  info <- vector(length=nd, mode="list")
+
+  ### T0, the initial state of different layers.
+  ###-------------------------------------------------
+  A0 <- d/ar
+  for (j in 1:nd)  {
+
+      info[[j]]$age <- A0[j]
+      info[[j]]$prob <- 1
+      
+  } # end for.
+
+  ### T1, T2, T3, ..., Tn.
+  ### Update the states of different layers.
+  ###-------------------------------------------------
+  for (i in 1:N)  {
+      
+      info[[1]]$age <- rep(0, length(info[[1]]$age))
+      for (j in 2:nd)  info[[j]]$age <- info[[j]]$age + Astep 
+    
+      ### Update each layer.        
+      for (j in 1:nd)  {
+
+          rv <- runif(1)
+          idx <- which(rv<cumsum(mat[,j]))[1]
+
+          if (idx!=j) {
+                
+              info[[j]]$age <- c(info[[j]]$age, info[[idx]]$age)             
+              info[[j]]$prob <- c(info[[j]]$prob*(1-mat[idx,j]), info[[idx]]$prob*mat[idx,j]) 
+
+              ### Merge grains with the same ages (and merge their probabilities).
+              MG <- merge(info[[j]]$age, info[[j]]$prob)
+              info[[j]]$age <- MG$u
+              info[[j]]$prob <- MG$v 
+
+          } # end if. 
+
+      } # end for.
+
+  } # end for.
+ 
+  ### 
+  nsim <- 2e5
+  ageMAT <- matrix(nrow=nd-1, ncol=nsim)
+  
+  for (j in 2:nd)  {
+
+      prob <- info[[j]]$prob
+      age <- info[[j]]$age
+
+      if (length(age)==1) {
+          
+          ageMAT[j-1,] <- rep(age, nsim)
+
+      } else {
+
+          ageMAT[j-1,] <- sample(x=age, size=nsim, prob=prob, replace=TRUE)
+
+      } # end if.
+      
+      ageMAT[j-1,] <- rnorm(n=nsim, mean=ageMAT[j-1,], sd=ageMAT[j-1,]*0.1)
+      
+  } # end for.
+
+  ###
+  nr <- 14; nc <- 3
+  layout(matrix(seq(nr*nc),nrow=nr, ncol=nc))
+  par(mar=c(0.3,0.3,0.3,0.3))
+ 
+  for (i in 1:(nd-1)) { 
+
+      plot(density(ageMAT[i,]), main="", col="skyblue", lwd=3, xaxt="n")
+
+      legend("top", legend=paste("Depth=",d[i+1]," m",sep=""),bty="n")
+
+  } # end for. 
+ 
+  rowMeans(ageMAT)
+  plot(apply(ageMAT,1,function(x) sd(x)/mean(x)), type="o", xaxt="n")
+  legend("top", legend="RSD", bty="n")
+
+  plot(apply(ageMAT,1,function(x) sum(x<=0.2)), type="o", xaxt="n")
+  legend("top", legend="Pseudo-zero grain",bty="n")
+
+  source("unmixNORM.txt")
+  D <- density(ageMAT[2,])
+  X <- unmixNORM(D$x, D$y, msd=0.1)
+  print(X)
+  
+ 
+
+  
+  ###
+  ### Scenario 2, mixing with accretion.
+  ###=======================================
+  rm(list=ls())
+
+  ### Merge age groups.
+  merge <- function(x, y) {
+
+      sce <- factor(x)
+      Y <- split(y, sce) 
+      n <- length(Y)
+
+      v <- vector(length=n)
+      for (i in 1:n) if (length(Y[[i]])==0)  v[i] <- 0  else v[i] <- sum(Y[[i]])
+
+      list("u"=as.numeric(levels(sce)), "v"=v)
+
+  } # end function merge.
+
+  ### A matrix describing the probability of
+  ### reciving grains from upper layers. 
+  getmat <- function(nd)  {
+
+     mat <- matrix(0,nrow=nd,ncol=nd)
+     for (i in 1:nd) {
+   
+        mat[i,i] <- 0.5+0.02*i
+
+        if (i==1) mat[i,i] <- 1
+        if (i==2) mat[1,2] <- 1-mat[i,i]
+
+        if (mat[i,i]>1) mat[i,i] <- 1
+      
+        if (i>=3) { 
+
+          v <- (0.5-0.01*i)^(1:(i-1))
+          if (i==50) v <- rep(1,i-1)
+
+          mat[1:(i-1),i] <-  rev((1-mat[i,i])*v/sum(v))
+
+        } # end if.
+      
+
+      } # end for.
+
+      mat
+
+  } # end function getmat.
+
+  ### Generate a new layer.
+  getL0 <- function() {
+
+      L0 <- vector(length=1, mode="list") 
+      L0[[1]]$age <- 0
+      L0[[1]]$prob <- 1
+      L0
+
+  } # end function getL0.
+
+  ### accumulation rate, m/ka
+  ar <- 0.065    
+
+  ### initial 3 layers, each 0.05 m           
+  d <- seq(0, 0.15, by=0.05)   
+  nd <- length(d)
+
+  mat <- getmat(nd)
+  round(mat,3)
+      
+  ### add one layer per AstepL ka. 
+  AstepL <- 0.05/ar   
+
+  ### time of a mixing cycle, ka.
+  Astep <- 0.03     
+
+  ### total time, T ka. 
+  T <- 30            
+  N <- T/Astep   
+  
+  ###
+  info <- vector(length=nd, mode="list")
+
+  ### T0.
+  ###-------------------------------------------------
+  A0 <- d/ar
+  for (j in 1:nd)  {
+
+      info[[j]]$age <- A0[j]
+      info[[j]]$prob <- 1
+      
+  } # end for.
+  
+  #
+  tx <- 0
+  
+  ### T1, T2, T3, ..., Tn.
+  ###-------------------------------------------------
+  for (i in 1:N)  {
+
+      ###
+      for (j in 1:nd)  info[[j]]$age <- info[[j]]$age + Astep 
+      info[[1]]$age <- rep(0, length(info[[1]]$age))
+
+      ### Test if add a new layer. 
+      tx <- tx + Astep 
+      if (tx>=AstepL) {
+
+          L0 <- getL0()
+          tx <- 0
+          d <- c(d,d[nd]+0.05)
+          
+      }  else  {
+          
+          L0 <- NULL
+
+      } # end if.
+
+      ### Update information.
+      info <- c(L0, info)
+      nd <- length(info)
+
+      ### Update probability matrix. 
+      mat <- getmat(nd)
+    
+      ### Update each layer.        
+      for (j in 1:nd)  {
+
+          rv <- runif(1)
+          idx <- which(rv<cumsum(mat[,j]))[1]
+
+          if (idx!=j) {
+            
+              info[[j]]$age <- c(info[[j]]$age, info[[idx]]$age)             
+              info[[j]]$prob <- c(info[[j]]$prob*(1-mat[idx,j]), info[[idx]]$prob*mat[idx,j]) 
+
+              ### Merge grains with the same ages (and merge their probabilities).
+              MG <- merge(info[[j]]$age, info[[j]]$prob)
+              info[[j]]$age <- MG$u
+              info[[j]]$prob <- MG$v 
+
+          } # end if. 
+
+      } # end for.
+
+  } # end for.
+ 
+  ### 
+  nsim <- 2e5
+  ageMAT <- matrix(nrow=nd-1, ncol=nsim)
+  
+  for (j in 2:nd)  {
+
+      prob <- info[[j]]$prob
+      age <- info[[j]]$age
+
+      if (length(age)==1) {
+          
+          ageMAT[j-1,] <- rep(age, nsim)
+
+      } else {
+
+          ageMAT[j-1,] <- sample(x=age, size=nsim, prob=prob, replace=TRUE)
+
+      } # end if.
+      
+      ageMAT[j-1,] <- rnorm(n=nsim, mean=ageMAT[j-1,], sd=ageMAT[j-1,]*0.1)
+      
+  } # end for.
+
+
+  ###DATA <- list("info"=info, "ageMAT"=ageMAT, "d"=d, "nd"=nd)
+  ###save(DATA, file="sim2.RData")
+  ###load("sim2.RData")
+  ###ageMAT <- DATA$ageMAT
+  ###d <- DATA$d
+  ###nd <- DATA$nd
+
+  ###
+  nr <- 15; nc <- 3
+  layout(matrix(seq(nr*nc),nrow=nr, ncol=nc))
+  par(mar=c(0.3,0.3,0.3,0.3))
+ 
+  for (i in 1:(nd-1)) { 
+
+      plot(density(ageMAT[i,]), main="", col="skyblue", lwd=3, xaxt="n")
+      legend("top", legend=paste("Depth=",d[i+1]," m",sep=""),bty="n")
+
+  } # end for. 
+ 
+  rowMeans(ageMAT)
+  plot(apply(ageMAT,1,function(x) sd(x)/mean(x)), type="o", xaxt="n")
+  legend("top", legend="RSD", bty="n")
+
+  plot(apply(ageMAT,1,function(x) sum(x<=0.2)), type="o", xaxt="n")
+  legend("top", legend="Pseudo-zero grain",bty="n")
+
+  ###
+  source("unmixNORM.txt")
+  par(mfrow=c(1,1))
+  D <- density(ageMAT[1,])
+  X <- unmixNORM(D$x, D$y, msd=0.1)
+  print(X)
+  
+
+  
